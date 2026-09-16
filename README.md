@@ -62,42 +62,62 @@ Managing state coordination (synchronizing `isPaused`, `totalDuration`, `timeEla
 ## Questionnaire
 
 1. **The first arrow-navigation version printed the song list again and again. Why did that happen, and how did you make the list redraw in the same place?**
+
+   **Answer:**  
    Standard `console.log()` and `process.stdout.write()` simply append new lines to the terminal's standard buffer, pushing previous content up into the scrollback history. To redraw in-place, we reposition the cursor to row 1, column 1 using the ANSI escape sequence `\x1b[H` and clear the visible screen using `\x1b[2J` before writing the updated menu frame. Furthermore, to prevent thousands of past frames from piling up in the terminal's scrollback history, we enabled the DEC Alternate Screen Buffer (`\x1b[?1049h`), ensuring the player renders in an isolated viewport without scrollback pollution.
 
 2. **Why do we need both cursor movement and line clearing while redrawing the terminal UI? What problem can happen if you only move the cursor?**
+
+   **Answer:**  
    If you only move the cursor back to the top (`\x1b[H`) without clearing lines (`\x1b[2J` or `\x1b[K`), any newly rendered line that is shorter than the line previously occupying that row will leave trailing characters visible (known as "ghosting"). Line/screen clearing guarantees that old text is removed before new text is painted.
 
 3. **What does the selected-song variable represent? How do you make sure the user cannot move above the first song or below the last song?**
+
+   **Answer:**  
    The `cursor` variable represents the zero-based array index of the currently highlighted track in the `allSongs` array. We prevent out-of-bounds indices by using modular arithmetic with wrap-around:
    - Up Arrow (`↑`): `cursor = ((cursor - 1) % allSongs.length); if (cursor < 0) cursor += allSongs.length;`
    - Down Arrow (`↓`): `cursor = (cursor + 1) % allSongs.length;`
+   
    Alternatively, clamping can be achieved using `Math.max(0, cursor - 1)` and `Math.min(allSongs.length - 1, cursor + 1)`.
 
 4. **Why was afplay + SIGSTOP/SIGCONT not a reliable solution for a real pause/resume feature? What changed in the final approach?**
+
+   **Answer:**  
    `afplay` is a basic one-shot command-line player that lacks an interactive command interface or real-time time query mechanism. Freezing it with the OS signal `SIGSTOP` halts the process abruptly at the kernel level without pausing internal audio clocks or reporting position, making synchronization in Node.js very fragile. In the final approach, we use VLC with the Remote Control interface (`-I rc`), allowing us to write the command `pause\n` directly to VLC's standard input for clean, application-level playback pausing.
 
 5. **How would you prove that the pause/resume implementation is correct? Describe a small test you would perform.**
+
+   **Answer:**  
    Play a track with known length (e.g. 60 seconds). Let it play for 5 seconds (progress bar displays `00:05`). Press Spacebar to pause. Wait 10 seconds in real life. While paused:
    1. The audio must be completely silent.
    2. The elapsed time and progress bar must remain frozen at `00:05`.
    3. The background interval must not perform unnecessary screen redraws.
+   
    Press Spacebar again to resume. Audio must pick up seamlessly from `00:05`, and 10 seconds later, the display should accurately read `00:15`.
 
 6. **How is the progress percentage calculated? What should happen to the progress value while the song is paused?**
+
+   **Answer:**  
    Progress percentage is calculated as `Math.min(100, (timeElapsed / totalDuration) * 100)`. `totalDuration` is fetched asynchronously using `afinfo`. `timeElapsed` is tracked using `Date.now() - startTime - totalPausedTime`. When the song is paused, we record `pausedAt = Date.now()`, and upon resuming we add `Date.now() - pausedAt` to `totalPausedTime`. This freezes `timeElapsed` completely while paused so the progress percentage does not drift.
 
 7. **When the user starts a new song while another song is already playing, what needs to be stopped or cleaned up? What could happen if you do not do this?**
+
+   **Answer:**  
    The active `vlcPlayProcess` must be terminated (via `SIGKILL`), its event listeners (`close`, `exit`) must be removed (`removeAllListeners()`), and the active `trackingInterval` must be cleared. If not cleaned up:
    1. Multiple VLC processes will run concurrently, playing overlapping audio simultaneously.
    2. Old `close` listeners will trigger stale autoplay events.
    3. Competing intervals will redraw the screen simultaneously, causing severe screen flickering.
 
 8. **Describe one bug or unexpected behaviour you faced while refining this application. What did you initially think was wrong, how did you investigate it, and what was the actual fix?**
-   *Bug:* When a song reached the end, the player failed to automatically advance to the next song.
-   *Investigation:* I initially suspected the `cp.on('close')` event logic had a syntax error. Upon debugging child process events, I discovered that `close` was never being fired at all! VLC in Remote Control mode (`-I rc`) is an interactive shell, so after playing a file, it remains running at its command prompt (`>`) waiting for more input.
+
+   **Answer:**  
+   *Bug:* When a song reached the end, the player failed to automatically advance to the next song.  
+   *Investigation:* I initially suspected the `cp.on('close')` event logic had a syntax error. Upon debugging child process events, I discovered that `close` was never being fired at all! VLC in Remote Control mode (`-I rc`) is an interactive shell, so after playing a file, it remains running at its command prompt (`>`) waiting for more input.  
    *Fix:* Passed the `--play-and-exit` flag to the VLC spawn command (`spawn('vlc', ['-I', 'rc', '--no-video', '--play-and-exit', songPath])`), which instructs VLC to exit immediately once the audio track finishes, reliably triggering the `close` handler and auto-advancing to the next track.
 
 9. **If you had to add "jump forward 10 seconds" next, which part of the current application would change and what existing playback information would you reuse?**
+
+   **Answer:**  
    We capture the Right Arrow key (`\x1b[C` or `0x1b, 0x5b, 0x43`) in raw mode. We write `seek +10\n` directly to `vlcPlayProcess.stdin`. In JS state, we update `timeElapsed = Math.min(totalDuration, timeElapsed + 10)` and shift `startTime = startTime - 10000` so that our internal timer remains synchronized with VLC's new playback position.
 
 ---
