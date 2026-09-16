@@ -129,54 +129,54 @@ The application operates as an event-driven terminal loop: reading raw key input
 
 ```mermaid
 flowchart TD
-    A[User Input via process.stdin (Raw Mode)] --> B{Key Press Handler}
+    A["User Input via process.stdin (Raw Mode)"] --> B{"Key Press Handler"}
     
     %% Input Routing
-    B -->|Up / Down Arrows| C[Update cursor Index (Modulo Wrap)]
-    B -->|Enter| D[playSong(cursor)]
-    B -->|n / b| NB[Advance Cursor & playSong]
-    B -->|Space / p| E[Toggle isPaused]
-    B -->|Left / Right Arrows| S[Seek ±10s via VLC stdin & Shift startTime]
-    B -->|'-' / '='| V[Adjust Volume ±5% & send VLC volume command]
-    B -->|m| M[Toggle Mute & send VLC volume 0/saved]
-    B -->|r| R[Cycle Repeat Mode: OFF ➔ ONE ➔ ALL]
-    B -->|q / Ctrl+C| Q[cleanupAndExit: Kill VLC, Restore Terminal, Exit]
+    B -->|Up / Down Arrows| C["Update cursor Index (Modulo Wrap)"]
+    B -->|Enter| D["playSong(cursor)"]
+    B -->|n / b| NB["Advance Cursor & playSong"]
+    B -->|Space / p| E["Toggle isPaused"]
+    B -->|Left / Right Arrows| S["Seek ±10s via VLC stdin & Shift startTime"]
+    B -->|"- / ="| V["Adjust Volume ±5% & send VLC volume command"]
+    B -->|m| M["Toggle Mute & send VLC volume 0/saved"]
+    B -->|r| R["Cycle Repeat Mode: OFF ➔ ONE ➔ ALL"]
+    B -->|q / Ctrl+C| Q["cleanupAndExit: Kill VLC, Restore Terminal, Exit"]
 
     %% UI Redraw Trigger
-    C --> UI[listSongs: Render Frame]
+    C --> UI["listSongs: Render Frame"]
     R --> UI
     V --> UI
     M --> UI
     S --> UI
 
     %% Playback Pipeline
-    D --> K[Kill Old VLC Process & Clear Listeners]
+    D --> K["Kill Old VLC Process & Clear Listeners"]
     NB --> K
-    K --> DUR[Fetch Duration via afinfo]
-    DUR --> SP[Spawn VLC: -I rc --no-video --play-and-exit]
-    SP --> VOL[Send Initial Volume to VLC stdin]
-    VOL --> T[startElapsedTracking: Interval @ 200ms]
+    K --> DUR["Fetch Duration via afinfo"]
+    DUR --> SP["Spawn VLC: -I rc --no-video --play-and-exit"]
+    SP --> VOL["Send Initial Volume to VLC stdin"]
+    VOL --> T["startElapsedTracking: Interval @ 200ms"]
     
     %% Pause Handling
-    E --> P_CMD[Send 'pause\n' to VLC stdin]
-    P_CMD --> P_STATE[Freeze / Resume Tracking Timer]
+    E --> P_CMD["Send 'pause' to VLC stdin"]
+    P_CMD --> P_STATE["Freeze / Resume Tracking Timer"]
     P_STATE --> UI
 
     %% Time Tracking & Watchdog
-    T -. Every 200ms .-> CHK{Second Changed?}
+    T -.->|Every 200ms| CHK{"Second Changed?"}
     CHK -->|Yes| UI
-    CHK -->|timeElapsed >= totalDuration| ADV[advanceToNextTrack]
+    CHK -->|timeElapsed >= totalDuration| ADV["advanceToNextTrack"]
 
     %% Auto-advance Pipeline
-    SP -. Song Finished (VLC exits) .-> CLOSE[cp.on 'close' Event]
+    SP -.->|Song Finished: VLC exits| CLOSE["cp.on 'close' Event"]
     CLOSE --> ADV
     ADV -->|Repeat ONE| D
     ADV -->|Repeat ALL / Next| D
-    ADV -->|End of List & OFF| STOP[Stop Playback & Pause]
+    ADV -->|End of List & OFF| STOP["Stop Playback & Pause"]
     STOP --> UI
 
     %% Terminal Render Pipeline
-    UI --> BUF[DEC Alternate Screen: \x1b[?1049h]
-    BUF --> HOME[Cursor Home & Clear: \x1b[H\x1b[2J]
-    HOME --> DRAW[Draw Title, Song List, Modern Slider, Volume Bar, Controls]
+    UI --> BUF["DEC Alternate Screen: ESC[?1049h"]
+    BUF --> HOME["Cursor Home & Clear: ESC[H ESC[2J"]
+    HOME --> DRAW["Draw Title, Song List, Modern Slider, Volume Bar, Controls"]
 ```
